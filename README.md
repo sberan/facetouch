@@ -14,6 +14,7 @@ Facetouch uses Apple's Vision framework to detect hand-face contact and color an
 - **Menu bar history** showing the last 10 checks with timestamps
 - **Live preview mode** with real-time detection status and lip color delta readout
 - **Configurable check interval** (2s to 60s)
+- **Pause function** - pause for 15 minutes, 1 hour, or all day
 - Automatically pauses when your screen sleeps
 
 ## How it works
@@ -27,8 +28,6 @@ The detector grabs frames from your front camera at whatever interval you set. F
 ## Performance
 
 - Uses ~2% CPU during periodic checks (camera on briefly every 10s)
-- Live preview mode uses more (~15-20% CPU) since it processes every frame at 30fps
-- Camera runs at 720p for reliable landmark detection
 - Memory footprint is around 50MB
 
 ## Install
