@@ -33,7 +33,7 @@ The detector grabs frames from your front camera at whatever interval you set. F
 
 Grab `FaceTouch.app.zip` from [Releases](https://github.com/sberan/facetouch/releases), unzip it, and move to Applications.
 
-If macOS blocks it: `xattr -cr FaceTouch.app`
+The app is signed with a Developer ID certificate. If macOS still blocks it on first launch, right-click the app and choose "Open", or run `xattr -cr FaceTouch.app` in Terminal.
 
 Requires macOS 14+.
 
