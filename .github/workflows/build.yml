@@ -27,5 +27,11 @@ jobs:
         with:
           tag_name: build-${{ steps.sha.outputs.short }}
           name: FaceTouch (build ${{ steps.sha.outputs.short }})
-          body: "Automated build from commit ${{ github.sha }}"
+          body: |
+            Automated build from commit ${{ github.sha }}
+
+            ### Install
+            1. Download `FaceTouch.app.zip` and unzip
+            2. Run: `xattr -cr FaceTouch.app`
+            3. Drag to Applications and open
           files: FaceTouch.app.zip

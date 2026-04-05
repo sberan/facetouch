@@ -15,6 +15,7 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 cp Sources/Info.plist "$APP_BUNDLE/Contents/"
+cp Sources/AppIcon.icns "$APP_BUNDLE/Contents/Resources/"
 
 # Sign with entitlements for camera access
 codesign --force --sign - --entitlements Sources/FaceTouch.entitlements "$APP_BUNDLE"

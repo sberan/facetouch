@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "FaceTouch",
             path: "Sources",
-            exclude: ["Info.plist", "FaceTouch.entitlements"]
+            exclude: ["Info.plist", "FaceTouch.entitlements", "AppIcon.icns"]
         )
     ]
 )
