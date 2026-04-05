@@ -6,7 +6,7 @@ A macOS menu bar app that watches for face touching via your webcam.
 
 
 
-I built this because I kept catching myself picking at my beard while thinking and during meetings. This is technically called trichotillomania.
+I built this because I kept catching myself picking at my beard while thinking and during meetings. This is technically called trichotillomania. It's also just good hygiene — touching your face is one of the main ways cold and flu viruses spread, and most people do it dozens of times per hour without realizing it.
 
 Facetouch uses Apple's Vision framework to detect hand-face contact and color analysis to catch fabric covering the mouth area.
 
