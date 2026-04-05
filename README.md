@@ -2,7 +2,8 @@
 
 A macOS menu bar app that watches for face touching and mouth covering via your webcam.
 
-<img width="632" height="560" alt="Screenshot 2026-04-05 at 3 53 10 PM" src="https://github.com/user-attachments/assets/ebd8af34-75b5-4538-a450-2380e883c7d2" />
+<img width="632" height="560" alt="image" src="https://github.com/user-attachments/assets/62fbd862-74c5-49eb-a527-f52ee3d1d3c6" />
+
 
 
 I built this because I kept catching myself picking at my beard while thinking and during meetings. This is technically called trichotillomania.
