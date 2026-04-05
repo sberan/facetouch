@@ -32,7 +32,9 @@ func detectMouthCovered(pixelBuffer: CVPixelBuffer, face: VNFaceObservation) -> 
     let dg = mouthRGB.g - cheekRGB.g
     let db = mouthRGB.b - cheekRGB.b
     let delta = sqrt(dr * dr + dg * dg + db * db)
-    return (delta > 40, delta)
+    let threshold = UserDefaults.standard.double(forKey: "mouthCoverThreshold")
+    if threshold <= 0 { return (false, delta) }  // off
+    return (delta > threshold, delta)
 }
 
 private func sampleRGBAroundPoints(pixelBuffer: CVPixelBuffer, points: [CGPoint]) -> (r: Double, g: Double, b: Double)? {

@@ -21,6 +21,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // Default mouth cover threshold (0 = off)
+        if UserDefaults.standard.object(forKey: "mouthCoverThreshold") == nil {
+            UserDefaults.standard.set(0.0, forKey: "mouthCoverThreshold")
+        }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "hand.raised.slash", accessibilityDescription: "FaceTouch")
@@ -109,6 +114,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         intervalItem.submenu = intervalMenu
         menu.addItem(intervalItem)
 
+        let mouthMenu = NSMenu()
+        let currentThreshold = UserDefaults.standard.double(forKey: "mouthCoverThreshold")
+        let thresholds: [(String, Double)] = [
+            ("Off", 0),
+            ("Low (Δ 60)", 60),
+            ("Medium (Δ 40)", 40),
+            ("High (Δ 25)", 25),
+        ]
+        for (label, value) in thresholds {
+            let item = NSMenuItem(title: label, action: #selector(setMouthThreshold(_:)), keyEquivalent: "")
+            item.tag = Int(value)
+            item.state = Int(currentThreshold) == Int(value) ? .on : .off
+            mouthMenu.addItem(item)
+        }
+        let mouthItem = NSMenuItem(title: "Mouth Cover Detection", action: nil, keyEquivalent: "")
+        mouthItem.submenu = mouthMenu
+        menu.addItem(mouthItem)
+
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         launchItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(launchItem)
@@ -183,6 +206,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         overlay.dismiss()
         updateIcon(touching: false)
+        rebuildMenu()
+    }
+
+    @objc func setMouthThreshold(_ sender: NSMenuItem) {
+        UserDefaults.standard.set(Double(sender.tag), forKey: "mouthCoverThreshold")
         rebuildMenu()
     }
 
