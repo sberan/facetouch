@@ -2,7 +2,9 @@
 
 A macOS menu bar app that watches for face touching and mouth covering via your webcam.
 
-I built this because I kept catching myself picking at my beard during meetings. It uses Apple's Vision framework to detect hand-face contact and color analysis to catch fabric covering the mouth area.
+I built this because I kept catching myself picking at my beard while thinking and during meetings. This is technically called trichotillomania.
+
+Facetouch uses Apple's Vision framework to detect hand-face contact and color analysis to catch fabric covering the mouth area.
 
 ## What it does
 
