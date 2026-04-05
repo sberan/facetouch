@@ -60,9 +60,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // Pause/Resume
-        let pauseTitle = detector?.paused == true ? "Resume" : "Pause"
-        let pauseItem = NSMenuItem(title: pauseTitle, action: #selector(togglePause), keyEquivalent: "p")
-        menu.addItem(pauseItem)
+        if detector?.paused == true {
+            let resumeItem = NSMenuItem(title: "Resume", action: #selector(togglePause), keyEquivalent: "p")
+            menu.addItem(resumeItem)
+        } else {
+            let pauseMenu = NSMenu()
+            let indefinite = NSMenuItem(title: "Until Resumed", action: #selector(togglePause), keyEquivalent: "p")
+            pauseMenu.addItem(indefinite)
+            pauseMenu.addItem(NSMenuItem.separator())
+            let pause15 = NSMenuItem(title: "15 Minutes", action: #selector(pauseFor15Min), keyEquivalent: "")
+            pauseMenu.addItem(pause15)
+            let pause1h = NSMenuItem(title: "1 Hour", action: #selector(pauseFor1Hour), keyEquivalent: "")
+            pauseMenu.addItem(pause1h)
+            let pauseDay = NSMenuItem(title: "Rest of Day", action: #selector(pauseRestOfDay), keyEquivalent: "")
+            pauseMenu.addItem(pauseDay)
+            let pauseItem = NSMenuItem(title: "Pause", action: nil, keyEquivalent: "")
+            pauseItem.submenu = pauseMenu
+            menu.addItem(pauseItem)
+        }
 
         menu.addItem(NSMenuItem.separator())
 
@@ -138,6 +153,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             detector.pause()
             overlay.dismiss()
         }
+        updateIcon(touching: false)
+        rebuildMenu()
+    }
+
+    @objc func pauseFor15Min() {
+        detector.pauseFor(15 * 60)
+        overlay.dismiss()
+        updateIcon(touching: false)
+        rebuildMenu()
+    }
+
+    @objc func pauseFor1Hour() {
+        detector.pauseFor(60 * 60)
+        overlay.dismiss()
+        updateIcon(touching: false)
+        rebuildMenu()
+    }
+
+    @objc func pauseRestOfDay() {
+        // Pause until midnight
+        let now = Date()
+        let calendar = Calendar.current
+        if let midnight = calendar.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0), matchingPolicy: .nextTime) {
+            let seconds = midnight.timeIntervalSince(now)
+            detector.pauseFor(seconds)
+        } else {
+            detector.pause()
+        }
+        overlay.dismiss()
         updateIcon(touching: false)
         rebuildMenu()
     }

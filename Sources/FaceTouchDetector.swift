@@ -108,6 +108,7 @@ final class FaceTouchDetector: NSObject {
     private let history = CheckHistory.shared
     var interval: TimeInterval = 10.0
     var paused = false
+    private var resumeTimer: Timer?
 
     init(onResult: @escaping (CheckResult) -> Void, onCheckStarted: @escaping () -> Void) {
         self.onResult = onResult
@@ -145,13 +146,24 @@ final class FaceTouchDetector: NSObject {
         paused = true
         timer?.invalidate()
         timer = nil
+        resumeTimer?.invalidate()
+        resumeTimer = nil
         continuousMode = false
         framesToAnalyze = 0
         captureSession?.stopRunning()
     }
 
+    func pauseFor(_ duration: TimeInterval) {
+        pause()
+        resumeTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+            self?.resume()
+        }
+    }
+
     func resume() {
         paused = false
+        resumeTimer?.invalidate()
+        resumeTimer = nil
         restartTimer()
         captureFrames()
     }
@@ -241,7 +253,7 @@ final class FaceTouchDetector: NSObject {
             if continuousMode { exitContinuousMode() }
             stopCamera()
             history.add(.noFaceDetected)
-            onResult(.noFaceDetected)
+            onResult(.clear)
             return
         }
 
