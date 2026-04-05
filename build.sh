@@ -17,7 +17,8 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 cp Sources/Info.plist "$APP_BUNDLE/Contents/"
 cp Sources/AppIcon.icns "$APP_BUNDLE/Contents/Resources/"
 
-# Sign with entitlements for camera access
-codesign --force --sign - --entitlements Sources/FaceTouch.entitlements "$APP_BUNDLE"
+# Sign with Developer ID for distribution outside App Store
+SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Sam Beran (3Z6WG8XPKY)}"
+codesign --force --sign "$SIGN_IDENTITY" --entitlements Sources/FaceTouch.entitlements --options runtime "$APP_BUNDLE"
 
 echo "Done! Run with: open $APP_BUNDLE"
