@@ -1,0 +1,31 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: bash build.sh
+
+      - name: Zip app
+        run: ditto -c -k --keepParent FaceTouch.app FaceTouch.app.zip
+
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ steps.sha.outputs.short }}
+          name: FaceTouch (build ${{ steps.sha.outputs.short }})
+          body: "Automated build from commit ${{ github.sha }}"
+          files: FaceTouch.app.zip
