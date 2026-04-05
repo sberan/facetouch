@@ -1,6 +1,7 @@
 # FaceTouch
 
 A macOS menu bar app that watches for face touching and mouth covering via your webcam.
+<img width="632" height="560" alt="Screenshot 2026-04-05 at 3 48 16 PM" src="https://github.com/user-attachments/assets/98e54cea-1028-4b5f-8ee5-507d610f9d7d" />
 
 I built this because I kept catching myself picking at my beard while thinking and during meetings. This is technically called trichotillomania.
 
@@ -23,7 +24,7 @@ The detector grabs frames from your front camera at whatever interval you set. F
 
 **Face touching**: Vision framework detects face bounding box + hand pose joints. If any hand joint lands within 120% of the face bounds, it triggers. Goes into continuous mode while touching is detected.
 
-**Mouth covering**: Samples RGB values around the outer lip landmarks and compares against a cheek patch near the nose. If the Euclidean color distance exceeds 40, something non-skin is covering the mouth. Works well for shirt collars, less reliable with skin-tone fabrics.
+**Mouth covering**: Samples RGB values around the outer lip landmarks and compares against a cheek patch near the nose. If the Euclidean color distance exceeds 40, something non-skin is covering the mouth. Works well for shirt collars, less reliable with skin-tone fabrics. I made it work for me, but this probably won't work well for all skin tones and lighting conditions. If it doesn't work well for you, sorry in advance! Let's chat - we can likely add some configuration options to make it work for more people and situations.
 
 ## Performance
 
