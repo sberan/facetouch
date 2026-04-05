@@ -17,8 +17,14 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 cp Sources/Info.plist "$APP_BUNDLE/Contents/"
 cp Sources/AppIcon.icns "$APP_BUNDLE/Contents/Resources/"
 
-# Sign with Developer ID for distribution outside App Store
-SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Sam Beran (3Z6WG8XPKY)}"
-codesign --force --sign "$SIGN_IDENTITY" --entitlements Sources/FaceTouch.entitlements --options runtime "$APP_BUNDLE"
+# Sign: use Developer ID if available, otherwise ad-hoc
+DEVID="Developer ID Application: Sam Beran (3Z6WG8XPKY)"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$DEVID"; then
+    echo "Signing with Developer ID..."
+    codesign --force --sign "$DEVID" --entitlements Sources/FaceTouch.entitlements --options runtime --deep "$APP_BUNDLE"
+else
+    echo "Developer ID not found, signing ad-hoc..."
+    codesign --force --sign - --entitlements Sources/FaceTouch.entitlements "$APP_BUNDLE"
+fi
 
 echo "Done! Run with: open $APP_BUNDLE"
