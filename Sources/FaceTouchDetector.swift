@@ -2,6 +2,142 @@ import AVFoundation
 import Vision
 import AppKit
 
+// MARK: - Touch zone
+
+/// Convex outline of the face from Vision's landmarks, in Vision-normalized coordinates.
+/// Landmarks stop at the eyebrows, so forehead points are added by pushing the brows away
+/// from the chin by half the chin-to-brow distance.
+func faceOutline(for face: VNFaceObservation) -> [CGPoint] {
+    let box = face.boundingBox
+    func inImage(_ region: VNFaceLandmarkRegion2D?) -> [CGPoint] {
+        (region?.normalizedPoints ?? []).map { CGPoint(x: box.minX + $0.x * box.width, y: box.minY + $0.y * box.height) }
+    }
+    let landmarks = face.landmarks
+    var points = inImage(landmarks?.allPoints)
+    let contour = inImage(landmarks?.faceContour)
+    let brows = inImage(landmarks?.leftEyebrow) + inImage(landmarks?.rightEyebrow)
+    if !contour.isEmpty && !brows.isEmpty {
+        let chin = contour[contour.count / 2]
+        let browX = brows.map(\.x).reduce(0, +) / CGFloat(brows.count)
+        let browY = brows.map(\.y).reduce(0, +) / CGFloat(brows.count)
+        let up = CGPoint(x: (browX - chin.x) * 0.5, y: (browY - chin.y) * 0.5)
+        points += brows.map { CGPoint(x: $0.x + up.x, y: $0.y + up.y) }
+    }
+    if points.count < 3 {
+        points = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY),
+                  CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY)]
+    }
+    return convexHull(points)
+}
+
+/// How close a hand bone's center line must come to the face outline to count as touching,
+/// as a fraction of image width: about half a finger's width plus a small margin.
+func touchReach(for face: VNFaceObservation) -> CGFloat {
+    face.boundingBox.width * 0.18
+}
+
+private func convexHull(_ points: [CGPoint]) -> [CGPoint] {
+    let sorted = points.sorted { $0.x == $1.x ? $0.y < $1.y : $0.x < $1.x }
+    func cross(_ o: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+    }
+    var lower: [CGPoint] = [], upper: [CGPoint] = []
+    for p in sorted {
+        while lower.count >= 2 && cross(lower[lower.count - 2], lower[lower.count - 1], p) <= 0 { lower.removeLast() }
+        lower.append(p)
+    }
+    for p in sorted.reversed() {
+        while upper.count >= 2 && cross(upper[upper.count - 2], upper[upper.count - 1], p) <= 0 { upper.removeLast() }
+        upper.append(p)
+    }
+    return Array(lower.dropLast() + upper.dropLast())
+}
+
+/// A segment between two connected hand joints, in Vision-normalized coordinates.
+/// A joint whose neighbours weren't detected becomes a zero-length bone so it still counts.
+struct HandBone {
+    let a: CGPoint
+    let b: CGPoint
+}
+
+private let handChains: [[VNHumanHandPoseObservation.JointName]] = [
+    [.wrist, .thumbCMC, .thumbMP, .thumbIP, .thumbTip],
+    [.wrist, .indexMCP, .indexPIP, .indexDIP, .indexTip],
+    [.wrist, .middleMCP, .middlePIP, .middleDIP, .middleTip],
+    [.wrist, .ringMCP, .ringPIP, .ringDIP, .ringTip],
+    [.wrist, .littleMCP, .littlePIP, .littleDIP, .littleTip],
+]
+
+func handBones(_ hand: VNHumanHandPoseObservation) -> [HandBone] {
+    func point(_ joint: VNHumanHandPoseObservation.JointName) -> CGPoint? {
+        guard let p = try? hand.recognizedPoint(joint), p.confidence > 0.3 else { return nil }
+        return p.location
+    }
+    var bones: [HandBone] = []
+    for chain in handChains {
+        let points = chain.map(point)
+        for (i, p) in points.enumerated() {
+            guard let p else { continue }
+            let next = i + 1 < points.count ? points[i + 1] : nil
+            let prev = i > 0 ? points[i - 1] : nil
+            if let next { bones.append(HandBone(a: p, b: next)) }
+            else if prev == nil { bones.append(HandBone(a: p, b: p)) }
+        }
+    }
+    return bones
+}
+
+/// Vision coordinates are normalized separately per axis, so x is scaled by the image aspect
+/// ratio to make distances round instead of stretched.
+func bone(_ bone: HandBone, touches outline: [CGPoint], reach: CGFloat, aspect: CGFloat) -> Bool {
+    func fix(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x * aspect, y: p.y) }
+    return segmentDistance(fix(bone.a), fix(bone.b), to: outline.map(fix)) <= reach * aspect
+}
+
+private func segmentDistance(_ a: CGPoint, _ b: CGPoint, to polygon: [CGPoint]) -> CGFloat {
+    if polygonContains(polygon, a) || polygonContains(polygon, b) { return 0 }
+    var best = CGFloat.infinity
+    for i in polygon.indices {
+        let e1 = polygon[i], e2 = polygon[(i + 1) % polygon.count]
+        if segmentsIntersect(a, b, e1, e2) { return 0 }
+        best = min(best, pointDistance(a, toSegment: e1, e2), pointDistance(b, toSegment: e1, e2),
+                   pointDistance(e1, toSegment: a, b), pointDistance(e2, toSegment: a, b))
+    }
+    return best
+}
+
+private func polygonContains(_ polygon: [CGPoint], _ p: CGPoint) -> Bool {
+    var inside = false
+    var j = polygon.count - 1
+    for i in polygon.indices {
+        let a = polygon[i], b = polygon[j]
+        if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x { inside.toggle() }
+        j = i
+    }
+    return inside
+}
+
+private func pointDistance(_ p: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
+    let dx = b.x - a.x, dy = b.y - a.y
+    let len2 = dx * dx + dy * dy
+    let t = len2 == 0 ? 0 : max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+    return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+
+private func segmentsIntersect(_ p1: CGPoint, _ p2: CGPoint, _ q1: CGPoint, _ q2: CGPoint) -> Bool {
+    func cross(_ o: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+    }
+    let d1 = cross(q1, q2, p1), d2 = cross(q1, q2, p2), d3 = cross(p1, p2, q1), d4 = cross(p1, p2, q2)
+    return (d1 > 0) != (d2 > 0) && (d3 > 0) != (d4 > 0)
+}
+
+func handTouchesFace(bones: [HandBone], face: VNFaceObservation, aspect: CGFloat) -> Bool {
+    let outline = faceOutline(for: face)
+    let reach = touchReach(for: face)
+    return bones.contains { bone($0, touches: outline, reach: reach, aspect: aspect) }
+}
+
 // MARK: - Mouth-covered detection via color comparison
 
 /// Returns (isCovered, colorDelta)
@@ -104,12 +240,32 @@ final class FaceTouchDetector: NSObject {
     private var timer: Timer?
     private var framesToAnalyze = 0
     private var continuousMode = false
+    private var clearFramesInARow = 0
     private let onResult: (CheckResult) -> Void
     private let onCheckStarted: () -> Void
     private let queue = DispatchQueue(label: "facetouch.capture", qos: .utility)
     private let history = CheckHistory.shared
     var interval: TimeInterval = 10.0
-    var paused = false
+    private var manuallyPaused = false
+    private var screenAsleep = false
+    private(set) var onBattery = false
+    var paused: Bool { manuallyPaused || screenAsleep || onBattery }
+
+    func setBatteryPower(_ value: Bool) {
+        guard onBattery != value else { return }
+        onBattery = value
+        if paused { suspendCapture() } else { restartTimer(); captureFrames() }
+    }
+
+    private func suspendCapture() {
+        timer?.invalidate()
+        timer = nil
+        queue.sync {
+            continuousMode = false
+            framesToAnalyze = 0
+            captureSession?.stopRunning()
+        }
+    }
     private var resumeTimer: Timer?
 
     init(onResult: @escaping (CheckResult) -> Void, onCheckStarted: @escaping () -> Void) {
@@ -127,11 +283,13 @@ final class FaceTouchDetector: NSObject {
         // Pause when screen sleeps, resume when it wakes
         let nc = NSWorkspace.shared.notificationCenter
         screenObservers.append(nc.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.pause()
+            self?.screenAsleep = true
+            self?.suspendCapture()
         })
         screenObservers.append(nc.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            guard self?.paused == true else { return }
-            self?.resume()
+            self?.screenAsleep = false
+            self?.restartTimer()
+            self?.captureFrames()
         })
     }
 
@@ -145,14 +303,10 @@ final class FaceTouchDetector: NSObject {
     }
 
     func pause() {
-        paused = true
-        timer?.invalidate()
-        timer = nil
+        manuallyPaused = true
         resumeTimer?.invalidate()
         resumeTimer = nil
-        continuousMode = false
-        framesToAnalyze = 0
-        captureSession?.stopRunning()
+        suspendCapture()
     }
 
     func pauseFor(_ duration: TimeInterval) {
@@ -163,7 +317,7 @@ final class FaceTouchDetector: NSObject {
     }
 
     func resume() {
-        paused = false
+        manuallyPaused = false
         resumeTimer?.invalidate()
         resumeTimer = nil
         restartTimer()
@@ -208,10 +362,13 @@ final class FaceTouchDetector: NSObject {
     private func captureFrames() {
         guard !paused else { return }
         onCheckStarted()
-        framesToAnalyze = 5
+        // The first frames after a cold start are dark while exposure settles, so hands often
+        // aren't found yet; look at up to ~1s of frames and alert on the first touching one.
+        framesToAnalyze = 30
 
         queue.async { [weak self] in
-            self?.captureSession?.startRunning()
+            guard let self, !self.paused else { return }
+            self.captureSession?.startRunning()
         }
     }
 
@@ -222,8 +379,21 @@ final class FaceTouchDetector: NSObject {
     }
 
     private func enterContinuousMode() {
+        clearFramesInARow = 0
         guard !continuousMode else { return }
+        framesToAnalyze = 0
         continuousMode = true
+    }
+
+    private func shouldEndOnFaceMissing() -> Bool {
+        if continuousMode {
+            // A hand on the face often hides it from Vision, so a missing face during an alert
+            // usually means the touch is still happening; only end after ~2s of misses in a row.
+            // A visible face with no hand on it ends the alert immediately instead.
+            clearFramesInARow += 1
+            return clearFramesInARow >= 60
+        }
+        return framesToAnalyze == 0
     }
 
     private func exitContinuousMode() {
@@ -251,15 +421,13 @@ final class FaceTouchDetector: NSObject {
         let hands = handRequest.results ?? []
 
         guard let face = faces.first else {
-            if framesToAnalyze > 0 { return }
+            guard shouldEndOnFaceMissing() else { return }
             if continuousMode { exitContinuousMode() }
             stopCamera()
             history.add(.noFaceDetected)
             onResult(.clear)
             return
         }
-
-        framesToAnalyze = 0
 
         // Check mouth covered
         let (mouthCovered, _) = detectMouthCovered(pixelBuffer: pixelBuffer, face: face)
@@ -271,6 +439,7 @@ final class FaceTouchDetector: NSObject {
         }
 
         guard !hands.isEmpty else {
+            if !continuousMode && framesToAnalyze > 0 { return }
             if continuousMode { exitContinuousMode() }
             stopCamera()
             history.add(.clear)
@@ -278,34 +447,16 @@ final class FaceTouchDetector: NSObject {
             return
         }
 
-        let faceBounds = faces.map { $0.boundingBox }
-
-        var handPoints: [CGPoint] = []
-        for hand in hands {
-            let jointNames: [VNHumanHandPoseObservation.JointName] = [
-                .indexTip, .middleTip, .ringTip, .littleTip, .thumbTip,
-                .indexMCP, .middleMCP, .ringMCP, .littleMCP,
-                .wrist
-            ]
-            for joint in jointNames {
-                if let point = try? hand.recognizedPoint(joint), point.confidence > 0.3 {
-                    handPoints.append(point.location)
-                }
-            }
-        }
-
-        let touching = handPoints.contains { point in
-            faceBounds.contains { face in
-                let expanded = face.insetBy(dx: -face.width * 0.2, dy: -face.height * 0.2)
-                return expanded.contains(point)
-            }
-        }
+        let aspect = CGFloat(CVPixelBufferGetWidth(pixelBuffer)) / CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        let bones = hands.flatMap(handBones)
+        let touching = faces.contains { handTouchesFace(bones: bones, face: $0, aspect: aspect) }
 
         if touching {
             history.add(.faceTouch)
             onResult(.faceTouch)
             enterContinuousMode()
         } else {
+            if !continuousMode && framesToAnalyze > 0 { return }
             if continuousMode { exitContinuousMode() }
             stopCamera()
             history.add(.clear)
@@ -317,6 +468,7 @@ final class FaceTouchDetector: NSObject {
 
 extension FaceTouchDetector: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard !paused else { return }
         if continuousMode {
             guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
             analyze(pixelBuffer: pixelBuffer)

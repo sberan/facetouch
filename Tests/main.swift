@@ -1,0 +1,21 @@
+import Foundation
+
+var checks = 0
+let detector = FaceTouchDetector(onResult: { _ in }, onCheckStarted: { checks += 1 })
+detector.setBatteryPower(true)
+detector.resume()
+assert(detector.paused && checks == 0, "Resume must not bypass battery pause")
+detector.setBatteryPower(false)
+assert(!detector.paused && checks == 1, "AC power should resume monitoring")
+detector.pause()
+detector.setBatteryPower(true)
+detector.setBatteryPower(false)
+assert(detector.paused && checks == 1, "Power changes must preserve manual pause")
+detector.setBatteryPower(true)
+detector.pauseFor(0.01)
+RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+assert(detector.paused && checks == 1, "Timed resume must not bypass battery pause")
+detector.setBatteryPower(false)
+assert(!detector.paused && checks == 2, "Expired timed pause should resume on AC")
+detector.stop()
+print("Battery pause/resume checks passed")

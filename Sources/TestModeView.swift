@@ -48,7 +48,7 @@ class SharedCameraSession: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         guard isRunning else { return }
         isRunning = false
         frameHandler = nil
-        session?.stopRunning()
+        queue.sync { session?.stopRunning() }
         session = nil
         previewLayer = nil
     }
@@ -67,6 +67,15 @@ class TouchDetectionController: ObservableObject {
     @Published var faceDetected = false
     @Published var handsDetected = false
     @Published var statusText = "Starting camera..."
+    @Published var debugShapes = DebugShapes()
+
+    /// Vision-normalized geometry (origin bottom-left) for drawing over the preview.
+    struct DebugShapes {
+        var imageSize = CGSize(width: 1280, height: 720)
+        var faceOutlines: [[CGPoint]] = []
+        var handBones: [(bone: HandBone, touching: Bool)] = []
+        var reach: CGFloat = 0.02
+    }
 
     func processFrame(_ pixelBuffer: CVPixelBuffer) {
         let faceRequest = VNDetectFaceLandmarksRequest()
@@ -78,7 +87,6 @@ class TouchDetectionController: ObservableObject {
 
         let faces = faceRequest.results ?? []
         let hands = handRequest.results ?? []
-        let faceBounds = faces.map { $0.boundingBox }
 
         // Mouth-covered detection
         var isMouthCovered = false
@@ -87,25 +95,19 @@ class TouchDetectionController: ObservableObject {
             (isMouthCovered, delta) = detectMouthCovered(pixelBuffer: pixelBuffer, face: face)
         }
 
-        var handPoints: [CGPoint] = []
-        for hand in hands {
-            let joints: [VNHumanHandPoseObservation.JointName] = [
-                .indexTip, .middleTip, .ringTip, .littleTip, .thumbTip,
-                .indexMCP, .middleMCP, .ringMCP, .littleMCP, .wrist
-            ]
-            for joint in joints {
-                if let point = try? hand.recognizedPoint(joint), point.confidence > 0.3 {
-                    handPoints.append(point.location)
-                }
-            }
-        }
+        let aspect = CGFloat(CVPixelBufferGetWidth(pixelBuffer)) / CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        let bones = hands.flatMap(handBones)
+        let isTouching = faces.contains { handTouchesFace(bones: bones, face: $0, aspect: aspect) }
 
-        let isTouching = !faces.isEmpty && handPoints.contains { point in
-            faceBounds.contains { face in
-                let expanded = face.insetBy(dx: -face.width * 0.2, dy: -face.height * 0.2)
-                return expanded.contains(point)
-            }
-        }
+        let imageSize = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
+        let shapes = DebugShapes(
+            imageSize: imageSize,
+            faceOutlines: faces.map(faceOutline),
+            handBones: bones.map { b in
+                (b, faces.contains { handTouchesFace(bones: [b], face: $0, aspect: aspect) })
+            },
+            reach: faces.first.map(touchReach) ?? 0.02
+        )
 
         DispatchQueue.main.async {
             self.faceDetected = !faces.isEmpty
@@ -113,6 +115,7 @@ class TouchDetectionController: ObservableObject {
             self.touching = isTouching
             self.mouthCovered = isMouthCovered
             self.mouthColorDelta = delta
+            self.debugShapes = shapes
             if isMouthCovered {
                 self.statusText = "MOUTH COVERED"
             } else if isTouching {
@@ -148,6 +151,50 @@ struct CameraPreview: NSViewRepresentable {
     }
 }
 
+// MARK: - Detection Overlay
+
+struct DetectionOverlay: View {
+    let shapes: TouchDetectionController.DebugShapes
+
+    var body: some View {
+        Canvas { context, size in
+            // Matches the preview layer's aspect-fill.
+            let scale = max(size.width / shapes.imageSize.width, size.height / shapes.imageSize.height)
+            let drawn = CGSize(width: shapes.imageSize.width * scale, height: shapes.imageSize.height * scale)
+            let origin = CGPoint(x: (size.width - drawn.width) / 2, y: (size.height - drawn.height) / 2)
+
+            func toView(_ p: CGPoint) -> CGPoint {
+                CGPoint(x: origin.x + p.x * drawn.width, y: origin.y + (1 - p.y) * drawn.height)
+            }
+            func toView(_ r: CGRect) -> CGRect {
+                let a = toView(CGPoint(x: r.minX, y: r.minY)), b = toView(CGPoint(x: r.maxX, y: r.maxY))
+                return CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+            }
+
+            for outline in shapes.faceOutlines where outline.count > 2 {
+                var path = Path()
+                path.addLines(outline.map(toView))
+                path.closeSubpath()
+                context.stroke(path, with: .color(.yellow), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+            }
+            let padWidth = shapes.reach * drawn.width * 2
+            for item in shapes.handBones {
+                let a = toView(item.bone.a), b = toView(item.bone.b)
+                var bone = Path()
+                bone.move(to: a)
+                bone.addLine(to: b)
+                let color: Color = item.touching ? .red : .orange
+                context.stroke(bone, with: .color(color.opacity(0.35)), style: StrokeStyle(lineWidth: padWidth, lineCap: .round))
+                context.stroke(bone, with: .color(color), lineWidth: 2)
+                for c in [a, b] {
+                    context.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(color))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - Test Mode View
 
 struct TestModeView: View {
@@ -163,6 +210,7 @@ struct TestModeView: View {
             if let layer = camera.previewLayer {
                 CameraPreview(layer: layer)
                     .frame(minWidth: 520, minHeight: 390)
+                    .overlay { DetectionOverlay(shapes: touchController.debugShapes) }
                     .overlay(alignment: .top) {
                         if touchController.mouthCovered {
                             Text("MOUTH COVERED!")

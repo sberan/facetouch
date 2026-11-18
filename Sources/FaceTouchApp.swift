@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import IOKit.ps
 
 @main
 struct FaceTouchApp: App {
@@ -17,6 +18,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var testWindow: NSWindow?
     let history = CheckHistory.shared
     let overlay = OverlayWindow()
+    private var powerSource: CFRunLoopSource?
+
+    private func updatePower() {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return }
+        let battery = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? == kIOPSBatteryPowerValue
+        detector?.setBatteryPower(battery)
+        if battery {
+            testWindow?.close()
+            overlay.dismiss()
+        }
+        updateIcon(touching: false)
+        rebuildMenu()
+    }
+
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -36,6 +51,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         detector = FaceTouchDetector(
             onResult: { [weak self] result in
                 DispatchQueue.main.async {
+                    guard self?.detector.paused == false else { return }
                     self?.updateIcon(touching: result.isAlert)
                     self?.rebuildMenu()
                     if result.isAlert {
@@ -51,6 +67,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         )
+        updatePower()
+        powerSource = IOPSNotificationCreateRunLoopSource({ context in
+            guard let context else { return }
+            Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue().updatePower()
+        }, Unmanaged.passUnretained(self).toOpaque())?.takeRetainedValue()
+        if let powerSource { CFRunLoopAddSource(CFRunLoopGetMain(), powerSource, .commonModes) }
         detector.start()
 
         // Enable launch at login
@@ -60,7 +82,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func rebuildMenu() {
         let menu = NSMenu()
 
-        let statusLabel = detector?.paused == true ? "FaceTouch — Paused" : "FaceTouch — Monitoring"
+        let statusLabel = detector?.onBattery == true ? "FaceTouch — Paused on Battery" : detector?.paused == true ? "FaceTouch — Paused" : "FaceTouch — Monitoring"
         menu.addItem(NSMenuItem(title: statusLabel, action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
 
@@ -242,6 +264,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var testModeView: TestModeView?
 
     @objc func openTestMode() {
+        guard !detector.onBattery else { return }
         // Pause the face touch detector to free the camera and CPU
         detector.pause()
 

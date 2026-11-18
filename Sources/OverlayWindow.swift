@@ -19,12 +19,10 @@ class OverlayWindow {
             window.level = .screenSaver
             window.backgroundColor = .clear
             window.isOpaque = false
-            window.ignoresMouseEvents = false
+            window.ignoresMouseEvents = true
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-            let hostingView = NSHostingView(rootView: OverlayView(dismiss: { [weak self] in
-                self?.dismiss()
-            }))
+            let hostingView = NSHostingView(rootView: OverlayView())
             window.contentView = hostingView
             window.orderFrontRegardless()
             windows.append(window)
@@ -40,11 +38,11 @@ class OverlayWindow {
 }
 
 struct OverlayView: View {
-    let dismiss: () -> Void
+    @State private var redOpacity = 0.0
 
     var body: some View {
         ZStack {
-            Color.red.opacity(0.45)
+            Color.red.opacity(redOpacity)
 
             VStack(spacing: 16) {
                 Image(systemName: "hand.raised.fill")
@@ -54,13 +52,13 @@ struct OverlayView: View {
                 Text("Don't touch your face!")
                     .font(.system(size: 48, weight: .bold))
                     .foregroundColor(.white)
-
-                Text("Click anywhere to dismiss")
-                    .font(.title3)
-                    .foregroundColor(.white.opacity(0.5))
             }
         }
         .ignoresSafeArea()
-        .onTapGesture { dismiss() }
+        .onAppear {
+            withAnimation(.linear(duration: 15)) {
+                redOpacity = 1
+            }
+        }
     }
 }
