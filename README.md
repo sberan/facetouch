@@ -14,7 +14,7 @@ Facetouch uses Apple's Vision framework to detect hand-face contact and color an
 
 - **Face touch detection** — tracks hand joints and flags when any get too close to your face
 - **Mouth covered detection** (optional) — compares lip color to cheek skin tone to detect fabric (shirt collar, mask, etc.)
-- **Full-screen red overlay** fades in from clear to solid red over 15 seconds while an alert remains active. Clicks pass through it; it clears when the alert ends.
+- **Full-screen red overlay** fades in from clear to solid red over 15 seconds while an alert remains active, with a buzz that gets louder over the same 15 seconds. Clicks pass through it; it clears when the alert ends.
 - **Timed pause** — pause for 15 minutes, 1 hour, or the rest of the day
 - **Menu bar history** showing the last 10 checks with timestamps
 - **Live preview mode** with real-time detection status, lip color delta readout, and the face outline and hand bones drawn over the video
